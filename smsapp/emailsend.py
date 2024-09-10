@@ -1,7 +1,6 @@
 import smtplib
 import re
 from email.message import EmailMessage
-from django.core.exceptions import BadRequest
 
 def is_valid_email(email):
     """Verify if the email is valid using regex pattern."""

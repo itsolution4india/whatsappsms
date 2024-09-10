@@ -1,5 +1,4 @@
 import requests
-import os
 
 # Constants
 API_VERSION = "v20.0"

@@ -11,7 +11,6 @@ from django.contrib.auth.decorators import login_required
 from .forms import UserLoginForm
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from .campaignmail import send_email_change_notification
 import logging
 from django.shortcuts import get_object_or_404
 from django.shortcuts import render
@@ -27,14 +26,12 @@ from django.db.models import Sum
 from django.views.decorators.csrf import csrf_exempt
 from .display_templates import fetch_templates
 from .media_id import get_media_format,generate_id
-from .send_message import send_messages_api
+# from .backup_files.send_message import send_messages_api
 from .create_template import template_create
-from .message_id import generate_pattern
+# from .backup_files.message_id import generate_pattern
 import openpyxl 
 from .models import Whitelist_Blacklist
 from django.contrib import messages
-from django.http import request
-from django.http import FileResponse, Http404
 import os
 from django.conf import settings 
 from .forms import UserLoginForm  
@@ -168,7 +165,7 @@ def Send_Sms(request):
             discount = show_discount(request.user)
             all_contact, contact_list = validate_phone_numbers(request,contacts, uploaded_file, discount)
             
-            generate_pattern(template_name, all_contact, contact_list)
+            #generate_pattern(template_name, all_contact, contact_list)
            
             for campaign in campaign_list:
                 if campaign['template_name'] == template_name:
@@ -245,7 +242,7 @@ def validate_phone_numbers(request,contacts, uploaded_file,discount):
     for phone_number in numbers_list:
         if pattern.match(phone_number):
             valid_numbers.add(phone_number)
-   
+
     whitelist_number,blacklist_number=whitelist_blacklist(request)
     def fnn(valid_numbers,discount):
         discount1=(len(valid_numbers)*discount)//100
