@@ -13,10 +13,10 @@ from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 import logging
 from django.shortcuts import get_object_or_404
-from django.shortcuts import render
+# from django.shortcuts import render
 from django.contrib.auth.decorators import login_required
 from django.http import HttpRequest, HttpResponse
-from .models import ReportInfo,Templates
+from .models import ReportInfo,Templates, RegisterApp
 from django.contrib.auth import logout
 from django.utils import timezone
 import requests
@@ -67,6 +67,11 @@ def user_login(request):
 
     return render(request, "login.html", {"form": form})
 
+def get_token_and_app_id(request):
+    token = get_object_or_404(RegisterApp, app_name=request.user.register_app).token
+    app_id = get_object_or_404(RegisterApp, app_name=request.user.register_app).app_id
+    return token, app_id
+
 @login_required
 def username(request):
     username=request.user
@@ -104,15 +109,14 @@ def show_discount(user):
 @login_required
 def Send_Sms(request):
     ip_address = request.META.get("REMOTE_ADDR", "Unknown IP")
+    token, _ = get_token_and_app_id(request)
     
     try:
         coins = request.user.coins
         report_list = ReportInfo.objects.filter(email=request.user)
         template_database = Templates.objects.filter(email=request.user)
         template_value = list(template_database.values_list('templates', flat=True))
-        
-        # Assuming fetch_templates and display_whatsapp_id are defined elsewhere
-        campaign_list = fetch_templates(display_whatsapp_id(request))
+        campaign_list = fetch_templates(display_whatsapp_id(request), token)
         if campaign_list is None :
             campaign_list=[]
         templates = [campaign for campaign in campaign_list if campaign['template_name'] in template_value]
@@ -161,7 +165,7 @@ def Send_Sms(request):
             if not campaign_title or not template_name:
                 messages.error(request, "Campaign title and template name are required.")
                 return render(request, "send-sms.html", context)
-         
+
             discount = show_discount(request.user)
             all_contact, contact_list = validate_phone_numbers(request,contacts, uploaded_file, discount)
             
@@ -172,6 +176,7 @@ def Send_Sms(request):
                     language = campaign['template_language']
                     media_type=campaign['media_type']
                     button_list = campaign.get('button', [])
+                    print("-----------------button_list", button_list)
                     if button_list is None:
                         message_count = 0
                     else:
@@ -179,8 +184,9 @@ def Send_Sms(request):
 
                     
                     money_data = len(all_contact) + message_count * len(all_contact)
+                    print("-----------------money_data", money_data)
                     subtract_coins(request, money_data)
-                    send_api(display_phonenumber_id(request), template_name, language, media_type, media_id, contact_list)
+                    send_api(token, display_phonenumber_id(request), template_name, language, media_type, media_id, contact_list)
                    
                     #send_messages_api(display_phonenumber_id(request), template_name, language, media_type, media_id, contact_list)
 
@@ -293,6 +299,7 @@ def subtract_coins(request, final_count):
     final_coins = final_count
     if user.coins >= final_coins: 
         user.coins -= final_coins
+        print("-----------------user.coins -= final_coins", user.coins, final_coins)
         user.save()
         messages.success(request, f"Message Send Successfully and Deduct {final_coins} coins from your account.")
     else:
@@ -300,7 +307,8 @@ def subtract_coins(request, final_count):
 ####################
 @login_required
 def Campaign(request):
-    campaign_list = fetch_templates(display_whatsapp_id(request))
+    token, app_id = get_token_and_app_id(request)
+    campaign_list = fetch_templates(display_whatsapp_id(request), token)
     if campaign_list is None :
         campaign_list=[]
     template_database = Templates.objects.filter(email=request.user)
@@ -341,11 +349,12 @@ def Campaign(request):
         website_url = request.POST.get('websiteUrl')
         
         if header_type in ['headerImage','headerVideo','headerDocument','headerAudio']:
-            header_content = header_handle(header_content,display_whatsapp_id(request))
+            header_content = header_handle(header_content,display_whatsapp_id(request), token, app_id)
         
             
         try:
             status,data=template_create(
+                token=token,
                 waba_id=display_whatsapp_id(request),
                 template_name=template_name,
                 language=language,
@@ -362,23 +371,25 @@ def Campaign(request):
             if status !=200:
                 data_str=str(data)
                 return HttpResponse(data_str)
-
+            # status, data=template_create(waba_id=display_whatsapp_id(request))
+            print("-----------------template_create status", status)
+            print("-----------------template_create data", data)
             Templates.objects.create(email=request.user, templates=template_name)
             return redirect('campaign')
-        except IntegrityError:
-            
+        except IntegrityError as e:
+            print(str(e))
             return render(request, "Campaign.html", context)
         
     return render(request, "Campaign.html", context)
 
 ####################
-@login_required
-def delete_campaign(request, template_id):
-    if template_id is None:
-        return 
-    campaign_data = get_object_or_404(CampaignData, template_id=template_id)
-    campaign_data.delete()
-    return redirect('campaign')
+# @login_required
+# def delete_campaign(request, template_id):
+#     if template_id is None:
+#         return 
+#     campaign_data = get_object_or_404(CampaignData, template_id=template_id)
+#     campaign_data.delete()
+#     return redirect('campaign')
 import csv
 @login_required
 def Reports(request):
@@ -444,7 +455,7 @@ def download_campaign_report(request, report_id):
         for phone in contact_all:
             matched = False
             row = rows_dict.get((Phone_ID, phone), None)
-            print(row)
+            print(r-----------------ow)
             if row:
                 matched_rows.append(row)
                 matched = True
@@ -476,12 +487,12 @@ def download_campaign_report(request, report_id):
         return response
     
     except mysql.connector.Error as err:
-        print(f"Database error: {err}")
+        print(f-----------------"Database error: {err}")
         messages.error(request, "Database error occurred.")
         return redirect('reports')
 
     except Exception as e:
-        print(f"An unexpected error occurred: {str(e)}")
+        print(f-----------------"An unexpected error occurred: {str(e)}")
         messages.error(request, f"Error: {str(e)}")
         return redirect('reports')
         '''
@@ -515,7 +526,7 @@ def download_campaign_report(request, report_id):
 
         # Check if the contact list is large and filter non-reply rows if necessary
         if len(contact_all) > 99:
-            non_reply_rows = [row for row in rows if row[5] != "reply"]
+            non_reply_rows = [row for row in rows if row[5] != "reply" and row[2]==Phone_ID]
 
         for phone in contact_all:
             matched = False
@@ -581,6 +592,7 @@ def whitelist_blacklist(request):
 @login_required
 @csrf_exempt
 def upload_media(request):
+    token, _ = get_token_and_app_id(request)
     context={
     "coins":request.user.coins,
     "username":username(request),
@@ -592,7 +604,9 @@ def upload_media(request):
         file_extension = uploaded_file.name.split('.')[-1]
         phone_number_id=display_phonenumber_id(request)
         media_type = get_media_format(file_extension)
-        response = generate_id(phone_number_id, media_type, uploaded_file)
+        response = generate_id(phone_number_id, media_type, uploaded_file, token)
+        print("-----------------phone_number_id, media_type, uploaded_file", phone_number_id, media_type, uploaded_file)
+        print("-----------------response", response)
         
        
         return render(request, "media-file.html", {'response': response.get('id'),"username":username(request),"coins":request.user.coins,"WABA_ID":display_whatsapp_id(request),"PHONE_ID":display_phonenumber_id(request)})
@@ -673,79 +687,79 @@ def send_otp(email):
     otp_response = requests.post(otp_url, params=params)
 
     if otp_response.status_code == 200:
-        print("OTP sent successfully.")
+        print("-----------------OTP sent successfully.")
     else:
         return redirect("password_reset.html")
 
 ##########testing code #############
-from django.shortcuts import render
-from django.http import JsonResponse
-import requests
-import json
+# from django.shortcuts import render
+# from django.http import JsonResponse
+# import requests
+# import json
 
-def facebook_sdk_view(request):
-    if request.method == 'POST':
-        try:
-            data = json.loads(request.body)
-            code = data.get('code')
+# def facebook_sdk_view(request):
+#     if request.method == 'POST':
+#         try:
+#             data = json.loads(request.body)
+#             code = data.get('code')
 
-            # Step 1: Exchange code for access token
-            params = {
-                'client_id': '1002275394751227',  # Replace with your Facebook App ID
-                'client_secret': '2a272b5573130b915db4bccc27caa34f',  # Replace with your Facebook App Secret
-                'code': code,
-                'redirect_uri': 'https://developers.facebook.com/apps/1002275394751227/'
-            }
-            response = requests.get('https://graph.facebook.com/v20.0/oauth/access_token', params=params)
-            token_data = response.json()
+#             # Step 1: Exchange code for access token
+#             params = {
+#                 'client_id': '1002275394751227',  # Replace with your Facebook App ID
+#                 'client_secret': '2a272b5573130b915db4bccc27caa34f',  # Replace with your Facebook App Secret
+#                 'code': code,
+#                 'redirect_uri': 'https://developers.facebook.com/apps/1002275394751227/'
+#             }
+#             response = requests.get('https://graph.facebook.com/v20.0/oauth/access_token', params=params)
+#             token_data = response.json()
 
-            if 'access_token' not in token_data:
-                return JsonResponse({'error': 'Failed to retrieve access token'}, status=400)
+#             if 'access_token' not in token_data:
+#                 return JsonResponse({'error': 'Failed to retrieve access token'}, status=400)
 
-            access_token = token_data['access_token']
+#             access_token = token_data['access_token']
 
-            # Step 2: Debug the access token
-            debug_params = {
-                'input_token': access_token,
-                'access_token': 'EAAE3ZCQ8LZB48BO9KDbpZCjbM6ZADGoAZANvtahzlAaoRqF24zgwUYsGZCSVpi1IkOhgaGnfCzmh5axAWDrXyomeqmhYUSgofSlIXojlBBCkwguOsFUgeCIaXuUZAsBhMiSTBFwyqZCkFTwGV1n700ef4fe1iZAGqVuBr2x9ZAh8AUz3FxxXIOWfDf6xinJAreZChYwFwZDZD'  # Replace with your Facebook App Access Token
-            }
-            debug_response = requests.get('https://graph.facebook.com/v20.0/debug_token', params=debug_params)
-            debug_data = debug_response.json()
+#             # Step 2: Debug the access token
+#             debug_params = {
+#                 'input_token': access_token,
+#                 'access_token': 'EAAE3ZCQ8LZB48BO9KDbpZCjbM6ZADGoAZANvtahzlAaoRqF24zgwUYsGZCSVpi1IkOhgaGnfCzmh5axAWDrXyomeqmhYUSgofSlIXojlBBCkwguOsFUgeCIaXuUZAsBhMiSTBFwyqZCkFTwGV1n700ef4fe1iZAGqVuBr2x9ZAh8AUz3FxxXIOWfDf6xinJAreZChYwFwZDZD'  # Replace with your Facebook App Access Token
+#             }
+#             debug_response = requests.get('https://graph.facebook.com/v20.0/debug_token', params=debug_params)
+#             debug_data = debug_response.json()
 
-            if 'error' in debug_data:
-                return JsonResponse({'error': debug_data['error']['message']}, status=400)
+#             if 'error' in debug_data:
+#                 return JsonResponse({'error': debug_data['error']['message']}, status=400)
 
-            # Step 3: Subscribe WhatsApp Business Account to an application
-            waba_id =data.get('waba_id') # Replace with your WhatsApp Business Account ID
-            subscribe_endpoint = f'https://graph.facebook.com/v20.0/{waba_id}/subscribed_apps'
-            subscribe_params = {
-                'subscribed_fields': 'messages, messaging_postbacks, messaging_optins, messaging_referrals',  # Adjust fields as per your requirements
-                'access_token': 'EAAE3ZCQ8LZB48BO9KDbpZCjbM6ZADGoAZANvtahzlAaoRqF24zgwUYsGZCSVpi1IkOhgaGnfCzmh5axAWDrXyomeqmhYUSgofSlIXojlBBCkwguOsFUgeCIaXuUZAsBhMiSTBFwyqZCkFTwGV1n700ef4fe1iZAGqVuBr2x9ZAh8AUz3FxxXIOWfDf6xinJAreZChYwFwZDZD'  # Replace with your Business Integration System Token
-            }
-            subscribe_response = requests.post(subscribe_endpoint, params=subscribe_params)
-            subscribe_data = subscribe_response.json()
+#             # Step 3: Subscribe WhatsApp Business Account to an application
+#             waba_id =data.get('waba_id') # Replace with your WhatsApp Business Account ID
+#             subscribe_endpoint = f'https://graph.facebook.com/v20.0/{waba_id}/subscribed_apps'
+#             subscribe_params = {
+#                 'subscribed_fields': 'messages, messaging_postbacks, messaging_optins, messaging_referrals',  # Adjust fields as per your requirements
+#                 'access_token': 'EAAE3ZCQ8LZB48BO9KDbpZCjbM6ZADGoAZANvtahzlAaoRqF24zgwUYsGZCSVpi1IkOhgaGnfCzmh5axAWDrXyomeqmhYUSgofSlIXojlBBCkwguOsFUgeCIaXuUZAsBhMiSTBFwyqZCkFTwGV1n700ef4fe1iZAGqVuBr2x9ZAh8AUz3FxxXIOWfDf6xinJAreZChYwFwZDZD'  # Replace with your Business Integration System Token
+#             }
+#             subscribe_response = requests.post(subscribe_endpoint, params=subscribe_params)
+#             subscribe_data = subscribe_response.json()
 
-            if 'success' in subscribe_data:
-                # Retrieve the WABA ID from the session info (example assumes frontend sends WABA ID in JSON)
-                waba_id = data.get('waba_id')
+#             if 'success' in subscribe_data:
+#                 # Retrieve the WABA ID from the session info (example assumes frontend sends WABA ID in JSON)
+#                 waba_id = data.get('waba_id')
                 
 
                 
-                return JsonResponse({'message': 'WhatsApp Business Account subscribed successfully', 'waba_id': waba_id})
-            elif 'error' in subscribe_data:
-                return JsonResponse({'error': subscribe_data['error']['message']}, status=400)
-            else:
-                return JsonResponse({'error': 'Unknown error occurred'}, status=500)
+#                 return JsonResponse({'message': 'WhatsApp Business Account subscribed successfully', 'waba_id': waba_id})
+#             elif 'error' in subscribe_data:
+#                 return JsonResponse({'error': subscribe_data['error']['message']}, status=400)
+#             else:
+#                 return JsonResponse({'error': 'Unknown error occurred'}, status=500)
 
-        except json.JSONDecodeError as e:
-            return JsonResponse({'error': 'Invalid JSON format in request body'}, status=400)
-        except Exception as e:
-            return JsonResponse({'error': str(e)}, status=500)
+#         except json.JSONDecodeError as e:
+#             return JsonResponse({'error': 'Invalid JSON format in request body'}, status=400)
+#         except Exception as e:
+#             return JsonResponse({'error': str(e)}, status=500)
 
-    elif request.method == 'GET':
-        # Return the rendered HTML template for GET requests
-        return render(request, 'facebook_sdk.html')
+#     elif request.method == 'GET':
+#         # Return the rendered HTML template for GET requests
+#         return render(request, 'facebook_sdk.html')
 
-    else:
-        # Handle other HTTP methods (shouldn't happen in your case)
-        return JsonResponse({'error': 'Method not allowed'}, status=405)
+#     else:
+#         # Handle other HTTP methods (shouldn't happen in your case)
+#         return JsonResponse({'error': 'Method not allowed'}, status=405)

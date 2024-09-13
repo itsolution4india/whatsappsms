@@ -41,6 +41,20 @@ def validate_whatsapp_business_account_id(value: str):
     if not value.isdigit() or len(value) != 15:
         raise ValidationError(f'{value} must be exactly 15 digits long.')
 
+class RegisterApp(models.Model):
+    app_name = models.CharField(max_length=20)
+    token = models.TextField()
+    app_id = models.CharField(max_length=50)
+
+    def __str__(self):
+        return self.app_name
+
+    def get_token(self):
+        return self.token
+    
+    def get_app_id(self):
+        return self.app_id
+
 class CustomUser(AbstractBaseUser, PermissionsMixin):
     email = models.EmailField(unique=True)
     username = models.CharField(max_length=150, unique=True)
@@ -50,6 +64,14 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     discount = models.IntegerField(default=0, validators=[MinValueValidator(0), MaxValueValidator(100)])
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
+
+    register_app = models.ForeignKey(RegisterApp, on_delete=models.SET_NULL, null=True)
+    def save(self, *args, **kwargs):
+        if self.register_app:
+            # Set token and app_id from RegisterApp
+            self.token = self.register_app.token
+            self.app_id = self.register_app.app_id
+        super(CustomUser, self).save(*args, **kwargs)
 
     objects = CustomUserManager()
 

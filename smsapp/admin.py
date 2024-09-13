@@ -1,46 +1,44 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from django.utils.translation import gettext_lazy as _
-from .models import CustomUser,Whitelist_Blacklist,ReportInfo,Templates
+from .models import CustomUser,Whitelist_Blacklist,ReportInfo,Templates, RegisterApp
 from .emailsend import main_send
 from django import forms
+
 class CustomUserAdmin(UserAdmin):
     model = CustomUser
-    list_display = ('email', 'username','phone_number_id','whatsapp_business_account_id','coins','discount', 'is_staff')
+    list_display = ('email', 'username', 'phone_number_id', 'whatsapp_business_account_id', 'coins', 'discount', 'is_staff', 'register_app')
     list_filter = ('is_staff', 'is_superuser', 'is_active', 'groups')
     search_fields = ('email', 'username')
     ordering = ('email',)
 
     fieldsets = (
-        (None, {'fields': ('email','phone_number_id','whatsapp_business_account_id','coins','discount', 'password')}),
+        (None, {'fields': ('email', 'phone_number_id', 'whatsapp_business_account_id', 'coins', 'discount', 'password', 'register_app')}),
         (_('Personal info'), {'fields': ('username',)}),
-        (_('Permissions'), {'fields': ('is_active', 'is_staff','is_superuser', 'groups', 'user_permissions')}),
-        
+        (_('Permissions'), {'fields': ('is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions')}),
     )
 
     add_fieldsets = (
         (None, {
             'classes': ('wide',),
-            'fields': ('email', 'username','phone_number_id','whatsapp_business_account_id','coins','discount', 'password1', 'password2', 'is_active', 'is_staff', 'is_superuser'),
+            'fields': ('email', 'username', 'phone_number_id', 'whatsapp_business_account_id', 'coins', 'discount', 'password1', 'password2', 'is_active', 'is_staff', 'is_superuser', 'register_app'),
         }),
     )
- 
 
-   
-   
     def save_model(self, request, obj, form, change):
         # Get the original object from the database (if it exists)
         if change:
             orig_obj = self.model.objects.get(pk=obj.pk)
             # Check if certain fields have changed (e.g., email)
             if obj.email != orig_obj.email:
-                new_mail=obj.email
-                old_mail=orig_obj.email
-                main_send(new_mail,old_mail)      
+                new_mail = obj.email
+                old_mail = orig_obj.email
+                main_send(new_mail, old_mail)
         # Save the object
         super().save_model(request, obj, form, change)
 
 admin.site.register(CustomUser, CustomUserAdmin)
+admin.site.register(RegisterApp)
 class WhitelistBlacklistAdminForm(forms.ModelForm):
     class Meta:
         model = Whitelist_Blacklist

@@ -1,14 +1,17 @@
 import requests
 from typing import Optional, List
+from views import get_token_and_app_id
 
-def send_api(phone_number_id: str, template_name: str, language: str, media_type: str, media_id: Optional[str], contact_list: List[str]):
+def send_api(token: str, phone_number_id: str, template_name: str, language: str, media_type: str, media_id: Optional[str], contact_list: List[str]):
     #url = 'http://127.0.0.1:8000/send_sms/'
     url="https://dataapi-chi.vercel.app/send_sms/"
+    
     headers = {
         'accept': 'application/json',
         'Content-Type': 'application/json'
     }
     data = {
+        "token":token,
         "phone_number_id": phone_number_id,
         "template_name": template_name,
         "language": language,
