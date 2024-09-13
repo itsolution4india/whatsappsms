@@ -220,6 +220,10 @@ def Send_Sms(request):
 #Valid _and _ Duplicate method
 import re
 def validate_phone_numbers(request,contacts, uploaded_file,discount):
+    """
+    This function validate input phone numbers
+    If Input Phone numbers are less than 100 then it will Add those numbers into White list column
+    """
     valid_numbers = set()
     pattern = re.compile(r'^(\+91[\s-]?)?[0]?(91)?[6789]\d{9}$')
 
@@ -251,9 +255,17 @@ def validate_phone_numbers(request,contacts, uploaded_file,discount):
 
     whitelist_number,blacklist_number=whitelist_blacklist(request)
     def fnn(valid_numbers,discount):
+        """
+        Here we are taking valid_numbers and discount and it will return number of phone number to remove
+        Example 
+        """
         discount1=(len(valid_numbers)*discount)//100
         return discount1
     def whitelist(valid_numbers, whitelist_number, blacklist_numbers, discount):
+        """
+        This gives final list of Phone numbers by doing all discount, if there discount is there then it will remove first numbers of the input list
+        and It will add whitelist_numbers first
+        """
         final_list = []
         
         for i in valid_numbers:
@@ -575,7 +587,10 @@ def download_campaign_report(request, report_id):
 ##############
 @login_required
 def whitelist_blacklist(request):
-    
+    """
+    This function taking all white and black list phone numbers from Database
+    and formatig those phone numbers a list and then Return.
+    """
     whitelist_blacklists = Whitelist_Blacklist.objects.all()
     whitelist_phones = [obj.whitelist_phone for obj in whitelist_blacklists]
     whitelist_phones_cleaned = [phone for sublist in whitelist_phones for phone in sublist.split('\r\n')]
