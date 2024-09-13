@@ -359,9 +359,9 @@ def Campaign(request):
         phone_number = request.POST.get('contactNumber', None)
         url_button_text = request.POST.get('websitebutton', None)
         website_url = request.POST.get('websiteUrl')
-        
+        print("header_type", header_type)
         if header_type in ['headerImage','headerVideo','headerDocument','headerAudio']:
-            header_content = header_handle(header_content,display_whatsapp_id(request), token, app_id)
+            header_content = header_handle(header_content, token, app_id)
         
             
         try:

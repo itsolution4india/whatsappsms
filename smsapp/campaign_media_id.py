@@ -28,7 +28,7 @@ API_VERSION = "v20.0"
 #     return ACCESS_TOKEN ,APP_ID
 
 
-def header_handle(file_path,waba_id, ACCESS_TOKEN, APP_ID):
+def header_handle(file_path, ACCESS_TOKEN, APP_ID):
     # ACCESS_TOKEN ,APP_ID=token_data(waba_id)
     file_length = file_path.size
     file_extension = file_path.name.split('.')[-1]

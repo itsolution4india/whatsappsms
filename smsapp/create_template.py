@@ -17,7 +17,7 @@ def template_create(token,waba_id,template_name, language, category, header_type
     #     token=token2
 
     components = []
-
+    token = f'Bearer {token}'
     # Create header component if provided
     if header_type and header_content:
         if header_type == "headerText":
