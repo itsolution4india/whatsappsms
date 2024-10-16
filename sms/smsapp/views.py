@@ -22,11 +22,11 @@ from django.contrib.auth import logout
 from django.utils import timezone
 import requests
 logger = logging.getLogger(__name__)
-from datetime import datetime
+from datetime import datetime, timedelta
 from django.db.models import Sum
 from django.views.decorators.csrf import csrf_exempt
 from .display_templates import fetch_templates
-from .media_id import get_media_format,generate_id
+from .media_id import get_media_format,generate_id, process_media_file
 from .send_message import send_messages_api
 from .create_template import template_create
 # from .message_id import generate_pattern
@@ -38,9 +38,11 @@ from django.http import FileResponse, Http404
 import os
 from django.conf import settings 
 from .forms import UserLoginForm  
+import threading
 import json
 import ast
 import random
+import time
 from .campaign_media_id import header_handle
 #from .smsapi import send_api
 from .fastapidata import send_api, send_flow_message_api
@@ -48,6 +50,8 @@ from django.utils.timezone import now
 from .functions.flows import create_template_with_flow, send_flow_messages_with_report, get_template_type, get_flow_id
 from .functions.send_messages import send_messages, display_phonenumber_id, save_schedule_messages
 from .utils import check_schedule_timings, CustomJSONDecoder
+from .functions.template_msg import delete_whatsapp_template
+
 @csrf_exempt
 
 def user_login(request):
@@ -331,17 +335,44 @@ def Campaign(request):
         linked_temp_one = request.POST.get('linked_temp_one', None)
         linked_temp_two = request.POST.get('linked_temp_two', None)
         linked_temp_three = request.POST.get('linked_temp_three', None)
+
+        media_file_one = request.FILES.get('file_one', None)
+        media_file_two = request.FILES.get('file_two', None)
+        media_file_three = request.FILES.get('file_three', None)
+
+        if media_file_one:
+            media_id_one, media_type_one = process_media_file(media_file_one, display_phonenumber_id(request), token)
+            time.sleep(1.5) 
+        else:
+            media_id_one, media_type_one = None, None
+
+        if media_file_two:
+            media_id_two, media_type_two = process_media_file(media_file_two, display_phonenumber_id(request), token)
+            time.sleep(1.5) 
+        else:
+            media_id_two, media_type_two = None, None
+
+        if media_file_three:
+            media_id_three, media_type_three = process_media_file(media_file_three, display_phonenumber_id(request), token)
+        else:
+            media_id_three, media_type_three = None, None
+
+        media_id_one = media_id_one + '|' + media_type_one if media_id_one else None
+        media_id_two = media_id_two + '|' + media_type_two if media_id_two else None
+        media_id_three = media_id_three + '|' + media_type_three if media_id_three else None
+
+        print("IDs", media_id_one, media_id_two, media_id_three)
         if header_type in ['headerImage','headerVideo','headerDocument','headerAudio']:
             header_content = header_handle(header_content, token, app_id)
         
         if quick_reply_one and linked_temp_one:
-            TemplateLinkage.objects.create(template_name=template_name, linked_template_name=linked_temp_one, button_name=quick_reply_one, useremail=request.user.email)
+            TemplateLinkage.objects.create(template_name=template_name, linked_template_name=linked_temp_one, button_name=quick_reply_one, useremail=request.user.email, image_id=media_id_one)
 
         if quick_reply_two and linked_temp_two:
-            TemplateLinkage.objects.create(template_name=template_name, linked_template_name=linked_temp_two, button_name=quick_reply_two, useremail=request.user.email)
+            TemplateLinkage.objects.create(template_name=template_name, linked_template_name=linked_temp_two, button_name=quick_reply_two, useremail=request.user.email, image_id=media_id_two)
 
         if quick_reply_three and linked_temp_three:
-            TemplateLinkage.objects.create(template_name=template_name, linked_template_name=linked_temp_three, button_name=quick_reply_three, useremail=request.user.email)
+            TemplateLinkage.objects.create(template_name=template_name, linked_template_name=linked_temp_three, button_name=quick_reply_three, useremail=request.user.email, image_id=media_id_three)
             
         try:
             status,data=template_create(
@@ -800,7 +831,26 @@ def save_phone_number(request):
                     token = latest_user.register_app.token
 
                 linked_template_name = latest_template.linked_template_name
-
+                image_id = latest_template.image_id
+                logging.info(f"image_id {image_id}")
+                
+                try:
+                    # Split the image_id and check the resulting list length
+                    parts = image_id.split("|")
+                    
+                    if len(parts) >= 2:
+                        image_id = parts[0]
+                        media_type = parts[1]
+                    else:
+                        raise ValueError("image_id format is incorrect. Expected format: 'id|type'")
+                
+                except Exception as e:
+                    logging.info(f"Error {e}")
+                    image_id = None
+                    media_type = "TEXT"
+                
+                if media_type in ["image/jpeg", "image/png"]:
+                    media_type = "IMAGE"
                 try:
                     campaign_list = fetch_templates(waba_id, token)
                     if campaign_list is None :
@@ -810,8 +860,8 @@ def save_phone_number(request):
                         flow_id = get_flow_id(campaign_list, linked_template_name)
                         status_code, _ = send_flow_message_api(token, phone_number_id, linked_template_name, flow_id, "en_US", phone_number)
                     else:
-                        send_api(token, phone_number_id, linked_template_name, "en", 'TEXT', None, [phone_number])
-                    logging.info(f"Next reply message send successfully {linked_template_name}, {phone_number}")
+                        send_api(str(token), str(phone_number_id), str(linked_template_name), "en", str(media_type), str(image_id), [phone_number])
+                    logging.info(f"Next reply message sent successfully. Template: {linked_template_name}, Phone Number: {phone_number}, Media Type: {type(media_type)}, Image ID Type: {type(image_id)}")
                 except Exception as e:
                     logging.error(f"Failed to send next reply message {e}")
                 # You can also save it in your model if needed
@@ -935,3 +985,105 @@ def send_flow_message(request):
         return redirect('send_flow_message')
         
     return render(request, "send-flow.html", context)
+    
+@login_required
+def delete_template(request):
+    token, app_id = get_token_and_app_id(request)
+    template_name = request.POST.get('template_name')
+    template_id = request.POST.get('template_id')
+
+    delete_result = delete_whatsapp_template(waba_id=display_whatsapp_id(request), token=token, template_name=template_name, template_id=template_id)
+    
+    if delete_result:
+        print(f"Template '{template_name}' deleted successfully.")
+    else:
+        print(f"Failed to delete template '{template_name}'.")
+    
+    return redirect('campaign')
+    
+@login_required
+def link_templates(request):
+    token, app_id = get_token_and_app_id(request)
+    campaign_list = fetch_templates(display_whatsapp_id(request), token)
+    if campaign_list is None:
+        campaign_list = []
+
+    
+    templatelinkage = TemplateLinkage.objects.filter(useremail= request.user)
+    template_database = Templates.objects.filter(email=request.user)
+    template_value = list(template_database.values_list('templates', flat=True))
+    templates = [campaign for campaign in campaign_list if campaign['template_name'] in template_value]
+
+    context = {
+        "template_name": [template['template_name'] for template in templates],
+        "template_data": json.dumps([template['template_data'] for template in templates]),
+        "template_status": json.dumps([template['status'] for template in templates]),
+        "template_button": json.dumps([json.dumps(template['button']) for template in templates]),
+        "template_media": json.dumps([template.get('media_type', 'No media available') for template in templates]),
+        "campaign_list": campaign_list,
+        "template_value": template_value,
+        "templatelinkage": templatelinkage
+    }
+
+    if request.method == 'POST':
+        template_name = request.POST.get('template_name')
+        if not template_name:
+            messages.error(request, "Template name is required.")
+            return redirect('link_templates')
+
+        header_type = request.POST.get('header_type')
+        header_content = request.POST.get('header_content')
+
+        media_ids = []
+        for i in range(1, 4):
+            quick_reply = request.POST.get(f'quick_reply_{i}')
+            linked_temp = request.POST.get(f'linked_temp_{i}')
+            file = request.FILES.get(f'file_{i}')
+
+            media_id = None
+            media_type = None
+            if file:
+                try:
+                    media_id, media_type = process_media_file(file, display_phonenumber_id(request), token)
+                    time.sleep(1.5)
+                except Exception as e:
+                    messages.error(request, f"Error processing file {i}: {str(e)}")
+                    continue
+
+            media_id_str = f"{media_id}|{media_type}" if media_id else None
+            media_ids.append(media_id_str)
+
+            if quick_reply and linked_temp:
+                try:
+                    TemplateLinkage.objects.create(
+                        template_name=template_name,
+                        linked_template_name=linked_temp,
+                        button_name=quick_reply,
+                        useremail=request.user.email,
+                        image_id=media_id_str or ''
+                    )
+                except Exception as e:
+                    messages.error(request, f"Error creating template linkage: {str(e)}")
+
+        if header_type in ['headerImage', 'headerVideo', 'headerDocument', 'headerAudio']:
+            try:
+                header_content = header_handle(header_content, token, app_id)
+            except Exception as e:
+                messages.error(request, f"Error handling header: {str(e)}")
+
+        messages.success(request, "Template linkages created successfully.")
+        return redirect('link_templates')
+
+    return render(request, "link_templates.html", context)
+
+@login_required
+def delete_template_linkage(request, id):
+    linkage = get_object_or_404(TemplateLinkage, id=id, useremail=request.user)
+    if request.method == 'POST':
+        try:
+            linkage.delete()
+            messages.success(request, "Successfully Deleted")
+        except Exception as e:
+            messages.error(request, "Something went wrong, Try again later")
+            logging.error(f"Error in deleting linked template  {e}")
+        return redirect('link_templates')

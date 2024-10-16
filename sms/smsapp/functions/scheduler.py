@@ -113,7 +113,7 @@ def start_scheduler():
 
     if scheduler is None:
         scheduler = BackgroundScheduler(timezone=pytz_timezone('Asia/Kolkata'))
-        scheduler.add_job(schedule_messages, 'interval', minutes=45)
+        scheduler.add_job(schedule_messages, 'interval', minutes=5)
         try:
             scheduler.start()
             logger.info("Scheduler started successfully.")

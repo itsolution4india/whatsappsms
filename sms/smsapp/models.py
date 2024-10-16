@@ -142,6 +142,7 @@ class TemplateLinkage(models.Model):
     button_name = models.CharField(max_length=100)
     useremail = models.CharField(max_length=100)
     linked_template_name = models.CharField(max_length=100)
+    image_id = models.CharField(max_length=100)
 
     def __str__(self):
         return self.template_name

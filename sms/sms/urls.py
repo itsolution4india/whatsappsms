@@ -25,7 +25,10 @@ urlpatterns = [
     path('facebook-sdk/',views.facebook_sdk_view, name='facebook_sdk'),
     path('save_phone_number/', views.save_phone_number, name='save_phone_number'),
     path('create_flow_message/', views.create_flow_message, name='create_flow_message'),
-    path('send_flow_message/', views.send_flow_message, name='send_flow_message'), 
+    path('send_flow_message/', views.send_flow_message, name='send_flow_message'),
+    path('delete_template/', views.delete_template, name='delete_template'),
+    path('link_templates/', views.link_templates, name='link_templates'),
+    path('template-linkage/delete/<int:id>/', views.delete_template_linkage, name='delete_template_linkage'),
     
  
 ]+ static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
